@@ -1,5 +1,7 @@
 import os
 import json
+import subprocess
+import sys
 from .video_downloader import download_video
 from .video_normalizer import normalize_video
 from .audio_extractor import extract_audio
@@ -40,22 +42,45 @@ def run_full_pipeline(video_url: str, job_id: str):
     # yt-dlp style output path expects a template; download_video will write exact file
     downloaded = os.path.join(base, "storage", "raw_videos", f"{job_id}.mp4")
 
+    def _write_status(state: str, extra: dict = None):
+        status_path = os.path.join(base, "storage", "transcripts", f"{job_id}_status.json")
+        payload = {"video_id": job_id, "status": state}
+        if extra:
+            payload.update(extra)
+        try:
+            os.makedirs(os.path.dirname(status_path), exist_ok=True)
+            with open(status_path, "w", encoding="utf-8") as sf:
+                json.dump(payload, sf, ensure_ascii=False)
+        except Exception:
+            pass
+
     try:
+        _write_status("downloading")
         download_video(video_url, downloaded)
-
+        # try to extract a thumbnail frame
+        try:
+            thumb_dir = os.path.join(base, "storage", "transcripts")
+            os.makedirs(thumb_dir, exist_ok=True)
+            thumb_path = os.path.join(thumb_dir, f"{job_id}_thumbnail.jpg")
+            # capture frame at 3 seconds
+            subprocess.run(["ffmpeg", "-y", "-ss", "3", "-i", downloaded, "-frames:v", "1", "-q:v", "2", thumb_path], check=False)
+            _write_status("downloaded", {"thumbnail": f"/storage/transcripts/{job_id}_thumbnail.jpg"})
+        except Exception:
+            _write_status("downloaded")
         normalized = os.path.join(base, "storage", "normalized", f"{job_id}.mp4")
+        _write_status("normalizing")
         normalize_video(downloaded, normalized)
-
+        _write_status("audio_extracting")
         audio_path = os.path.join(base, "storage", "audio", f"{job_id}.wav")
         extract_audio(normalized, audio_path)
-
+        _write_status("transcribing")
         segments = []
         try:
             segments = transcribe_with_default(audio_path)
         except Exception as e:
             # ASR failed — write empty transcript metadata
             segments = [{"start": 0.0, "end": 0.0, "text": f"ASR error: {e}"}]
-
+        _write_status("transcribed")
         subs_path = os.path.join(base, "storage", "subtitles", f"{job_id}.srt")
         _write_srt(segments, subs_path)
 
@@ -65,6 +90,7 @@ def run_full_pipeline(video_url: str, job_id: str):
         with open(transcript_path, "w", encoding="utf-8") as f:
             json.dump(segments, f, ensure_ascii=False, indent=2)
 
+        _write_status("detecting_highlights")
         # detect highlights (rule-based) and save
         try:
             highlights = detect_highlights(segments, audio_path)
@@ -75,6 +101,7 @@ def run_full_pipeline(video_url: str, job_id: str):
         with open(highlights_path, "w", encoding="utf-8") as f:
             json.dump(highlights, f, ensure_ascii=False, indent=2)
 
+        _write_status("generating_clips")
         # auto-generate clips by grouping transcript segments
         try:
             clips_specs = group_segments_to_clips(segments, min_len=15, max_len=60, gap_threshold=3.0)
@@ -119,13 +146,19 @@ def run_full_pipeline(video_url: str, job_id: str):
             clips_meta_path = os.path.join(base, "storage", "transcripts", f"{job_id}_clips.json")
             with open(clips_meta_path, "w", encoding="utf-8") as f:
                 json.dump(final_meta, f, ensure_ascii=False, indent=2)
+            _write_status("finished", {"clips_count": len(final_meta)})
         except Exception as e:
             clips_meta_path = os.path.join(base, "storage", "transcripts", f"{job_id}_clips_error.log")
             with open(clips_meta_path, "w", encoding="utf-8") as f:
                 f.write(str(e))
+            _write_status("error", {"error": str(e)})
 
     except Exception as e:
         # basic logging to a file
         log_path = os.path.join(base, "storage", "transcripts", f"{job_id}_error.log")
         with open(log_path, "w", encoding="utf-8") as f:
             f.write(str(e))
+        try:
+            _write_status("error", {"error": str(e)})
+        except Exception:
+            pass

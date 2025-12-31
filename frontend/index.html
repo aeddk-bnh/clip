@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Auto Short Clip — Demo UI</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>AI Auto Short Clip — Demo</h1>
+    <form id="processForm">
+      <label>
+        Video URL
+        <input type="url" id="videoUrl" placeholder="https://www.youtube.com/watch?v=..." required>
+      </label>
+      <label>
+        Platform
+        <select id="platform">
+          <option value="auto">auto</option>
+        </select>
+      </label>
+      <button type="submit">Process</button>
+    </form>
+
+    <div id="result" class="result" aria-live="polite"></div>
+
+    <div id="preview" class="preview">
+      <div class="preview-overlay">Preview</div>
+    </div>
+
+    <div id="clips" class="clips"></div>
+
+    <div class="notes">Note: ffmpeg and other server deps must be installed on the host.</div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
