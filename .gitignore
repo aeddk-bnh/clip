@@ -1,0 +1,32 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual envs
+env/
+ENV/
+
+# Logs
+*.log
+*.log.*
+
+# Generated storage/artifacts by the pipeline
+/storage/
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+
+# Byte-compiled / optimized / DLL files
+*.pyc
+*.pyo
+*.pyd
+
+# Test and build
+.pytest_cache/
+build/
+dist/

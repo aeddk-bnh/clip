@@ -1,0 +1,298 @@
+# AI Auto Short Clip Generator (Opus Clip–like MVP)
+
+## 1. Mục tiêu dự án
+
+Xây dựng một hệ thống **tự động chuyển video dài thành các video ngắn (shorts)** có subtitle, tối ưu cho TikTok / YouTube Shorts / Reels.
+
+Dự án tập trung vào **MVP kỹ thuật**, không cạnh tranh trực tiếp với Opus Clip, ưu tiên:
+
+* Tính khả thi
+* Pipeline rõ ràng
+* Có giá trị portfolio / sản phẩm demo
+
+---
+
+## 2. Phạm vi (Scope)
+
+### 2.1 Có trong MVP
+
+* **Nhập video bằng URL** (YouTube, TikTok, Facebook, Instagram Reels)
+* Tự động tải video về server
+* Chuẩn hóa video (codec, fps, resolution)
+* Trích xuất audio
+* Speech-to-Text (ASR) + timestamp
+* Phát hiện đoạn nội dung nổi bật (highlight)
+* Tự động cắt video thành clip ngắn (15–60s)
+* Sinh subtitle (SRT / hard-sub)
+* Xuất video format dọc 9:16
+
+### 2.2 Không làm trong MVP
+
+* Upload file thủ công (chỉ URL)
+* Viral score nâng cao
+* Publish trực tiếp lên mạng xã hội
+* Recommendation system phức tạp
+* Multi-user SaaS billing
+
+---
+
+## 3. Kiến trúc tổng thể
+
+```
+[Frontend]
+   |
+   v
+[Backend API]
+   |
+   +-- Media Processor (ffmpeg)
+   +-- ASR Service (Whisper)
+   +-- Highlight Engine
+   +-- Subtitle Generator
+   +-- Video Formatter (9:16)
+```
+
+---
+
+## 4. Công nghệ sử dụng
+
+### 4.1 Backend
+
+* Python 3.10+
+* FastAPI (REST API)
+* ffmpeg
+* OpenCV / MediaPipe (optional face tracking)
+
+### 4.2 AI / NLP
+
+* faster-whisper (ASR)
+* sentence-transformers (optional)
+* Rule-based NLP (MVP)
+
+### 4.3 Frontend (tối thiểu)
+
+* Web UI (React / simple HTML)
+* Hoặc CLI cho bản đầu
+
+---
+
+## 5. Luồng xử lý chi tiết (Pipeline)
+
+### Bước 0: Nhập video từ URL
+
+* Người dùng nhập link video (YouTube / TikTok / Facebook)
+* Backend kiểm tra platform
+* Tải video bằng downloader
+* Lưu file vào `storage/raw_videos/`
+
+**Công cụ đề xuất**
+
+* yt-dlp (ưu tiên)
+* fallback: platform-specific extractor
+
+---
+
+### Bước 1: Chuẩn hóa video
+
+* Convert về:
+
+  * H.264
+  * 30fps
+  * Audio AAC / WAV
+
+```bash
+ffmpeg -i input.mp4 -r 30 -c:v libx264 -preset fast normalized.mp4
+```
+
+---
+
+### Bước 2: Extract Audio
+
+* Trích audio WAV 16kHz mono
+
+```bash
+ffmpeg -i normalized.mp4 -ar 16000 -ac 1 audio.wav
+```
+
+---
+
+### Bước 3: Speech-to-Text (ASR)
+
+* Dùng Whisper
+* Output: text + timestamp từng segment
+
+```json
+[
+  {
+    "start": 12.5,
+    "end": 18.2,
+    "text": "This is the most important idea"
+  }
+]
+```
+
+---
+
+### Bước 4: Highlight Detection (MVP)
+
+#### Rule-based scoring:
+
+* Độ dài segment > 5s
+* Có keyword quan trọng
+* Có pause trước/sau
+* Energy giọng nói cao
+
+```text
+score = w1*length + w2*keyword + w3*pause
+```
+
+Kết quả: danh sách đoạn đề xuất
+
+---
+
+### Bước 5: Clip Generation
+
+* Gom các segment gần nhau
+* Giới hạn clip 15–60s
+* Cắt video bằng ffmpeg
+
+---
+
+### Bước 6: Subtitle Generation
+
+* Xuất file `.srt`
+* Hoặc burn subtitle vào video
+
+---
+
+### Bước 7: Format dọc 9:16
+
+* Crop center hoặc theo khuôn mặt
+* Scale lên 1080x1920
+
+---
+
+## 6. API Design (Backend)
+
+### POST /process-by-url
+
+* Input:
+
+```json
+{
+  "video_url": "https://www.youtube.com/watch?v=xxxx",
+  "platform": "auto"
+}
+```
+
+* Output:
+
+```json
+{
+  "video_id": "uuid",
+  "status": "downloading"
+}
+```
+
+---
+
+### GET /status/{video_id}
+
+* Trả về trạng thái pipeline
+
+---
+
+### GET /clips/{video_id}
+
+* Danh sách clip đã sinh
+
+---
+
+### GET /download/{clip_id}
+
+* Tải clip
+
+---
+
+## 7. Cấu trúc thư mục dự án
+
+```
+ai-auto-short-generator/
+│
+├── backend/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── api/
+│   │   │   ├── process_by_url.py
+│   │   │   ├── status.py
+│   │   │   └── clips.py
+│   │   ├── services/
+│   │   │   ├── video_downloader.py
+│   │   │   ├── video_normalizer.py
+│   │   │   ├── audio_extractor.py
+│   │   │   ├── asr_service.py
+│   │   │   ├── highlight_engine.py
+│   │   │   ├── video_cutter.py
+│   │   │   └── subtitle_generator.py
+│   │   ├── models/
+│   │   └── utils/
+│   └── requirements.txt
+│
+├── storage/
+│   ├── raw_videos/
+│   ├── normalized/
+│   ├── audio/
+│   ├── transcripts/
+│   ├── clips/
+│   └── subtitles/
+│
+├── docs/
+│   └── architecture.md
+│
+└── README.md
+```
+
+---
+
+## 8. Coding Rules cho Agent
+
+* Mỗi module **độc lập, testable**
+* Không hard-code path
+* Dùng config file (`config.yaml`)
+* Log rõ từng bước pipeline
+* Không optimize sớm
+
+---
+
+## 9. Milestones
+
+| Tuần | Output                 |
+| ---- | ---------------------- |
+| 1    | Upload + extract audio |
+| 2    | ASR + transcript       |
+| 3    | Highlight detection    |
+| 4    | Auto cut video         |
+| 5    | Subtitle + format dọc  |
+| 6    | UI + export            |
+
+---
+
+## 10. Giá trị CV / Portfolio
+
+* Multimedia processing
+* AI ứng dụng (ASR, NLP)
+* Backend pipeline design
+* ffmpeg, OpenCV 
+* Sản phẩm thực tế
+
+---
+
+## 11. Hướng mở rộng sau MVP
+
+* ML-based highlight detection
+* Multi-language
+* Face-aware smart crop
+* SaaS deployment
+
+---
+
+END OF SPECIFICATION
