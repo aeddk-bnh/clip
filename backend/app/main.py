@@ -1,7 +1,7 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 import threading
 from pydantic import BaseModel
 import uuid
@@ -9,6 +9,8 @@ import os
 import json
 
 from .services.pipeline import run_full_pipeline
+import urllib.request
+from urllib.parse import urlparse, unquote
 
 
 app = FastAPI(title="AI Auto Short Clip - Demo")
@@ -108,3 +110,28 @@ def list_clips(video_id: str):
             clips.append({"id": fname, "url": f"/storage/final_clips/{video_id}/{fname}"})
 
     return JSONResponse({"video_id": video_id, "clips": clips})
+
+
+@app.get('/proxy-thumbnail')
+def proxy_thumbnail(url: str):
+    # simple proxy for provider thumbnails to avoid CORS and allow client-side processing
+    if not url:
+        raise HTTPException(status_code=400, detail='missing url')
+    # basic host whitelist to reduce SSRF risk
+    parsed = urlparse(url)
+    host = parsed.hostname or ''
+    allowed_hosts = ['img.youtube.com', 'i.ytimg.com']
+    if host not in allowed_hosts:
+        raise HTTPException(status_code=403, detail='host not allowed')
+    try:
+        # decode possible encoded urls
+        u = unquote(url)
+        req = urllib.request.Request(u, headers={
+            'User-Agent': 'ClipProxy/1.0'
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read()
+            ctype = resp.headers.get_content_type() or 'image/jpeg'
+            return Response(content, media_type=ctype)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
